@@ -1,0 +1,62 @@
+name: Unit Converter CI/CD
+
+on:
+  push:
+  pull_request:
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+    test:
+      runs-on: ubuntu-latest
+
+      steps:
+        - name: Checkout repository
+          uses: actions/checkout@v4
+
+        - name: Setup Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: ${{ env.PYTHON_VERSION }}
+
+        - name: Cache pip
+          uses: actions/cache@v4
+          with:
+            path: ~/.cache/pip
+            key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+            restore-keys: |
+              ${{ runner.os }}-pip-
+
+        - name: Install dependencies
+          run: |
+            python -m pip install --upgrade pip
+            python -m pip install -r requirements.txt
+
+        - name: Run tests
+          run: python -m pytest -v
+
+        - name: Build package
+          run: |
+            mkdir -p build
+            zip -r build/unit-converter.zip src README.md requirements.txt
+        
+        - name: Upload artifact
+          uses: actions/upload-artifact@v4
+          with:
+            name: unit-converter-package
+            path: build/unit-converter.zip
+
+    deploy:
+      needs: test
+      runs-on: ubuntu-latest
+
+      steps:
+        - name: Download artifact
+          uses: actions/download-artifact@v4
+          with:
+            name: unit-converter-package
+            path: build
+
+        - name: Verify artifact
+          run: ls -la build
