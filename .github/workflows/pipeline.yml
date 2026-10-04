@@ -1,90 +1,66 @@
-name: Unit Converter CI/CD
+name: Pipeline
 
 on:
   push:
   pull_request:
 
-env:
-  PYTHON_VERSION: "3.11"
-
 permissions:
   contents: read
 
 jobs:
-    test:
-      runs-on: ubuntu-latest
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      steps:
-        - name: Checkout repository
-          uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.10
 
-        - name: Setup Python
-          uses: actions/setup-python@v5
-          with:
-            python-version: ${{ env.PYTHON_VERSION }}
+      - name: Tests ausführen
+        run: python -m pytest -v
 
-        - name: Cache pip
-          uses: actions/cache@v4
-          with:
-            path: ~/.cache/pip
-            key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-            restore-keys: |
-              ${{ runner.os }}-pip-
+      - name: Dependencies installieren
+        run: python -m pip install -r requirement.txt
 
-        - name: Install dependencies
-          run: |
-            python -m pip install --upgrade pip
-            python -m pip install -r requirements.txt
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Paket bauen
+        run: |
+          mkdir -p build
+          python -m zipfile -c build/app.zip src/
 
-        - name: Run tests
-          run: python -m pytest -v
+      - name: Paket hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-paket
+          path: build/
 
-        - name: Build package
-          run: |
-            mkdir -p build
-            zip -r build/unit-converter.zip src README.md requirements.txt
-        
-        - name: Upload artifact
-          uses: actions/upload-artifact@v4
-          with:
-            name: unit-converter-package
-            path: build/unit-converter.zip
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment starten
+        run: echo "Deploy nach ${{ secrets.DEPLOY_TOKEN }}"
 
-    deploy:
-      needs: test
-      if: github.ref == 'refs/heads/main'
-      runs-on: ubuntu-latest
-      environment: production
-      permissions:
-        contents: write
-        actions: read
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
-      steps:
-        - name: Checkout repository
-          uses: actions/checkout@v4
-          
-        - name: Download artifact
-          uses: actions/download-artifact@v4
-          with:
-            name: unit-converter-package
-            path: build
+    steps:
+      - name: Pip-Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-cache
 
-        - name: Verify artifact
-          run: ls -la build
-
-        - name: Check deployment configuration
-          env:
-            DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
-            DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
-          run: |
-            echo "Deploy target: $DEPLOY_TARGET"
-            echo "Token length: ${#DEPLOY_TOKEN}"
-
-        - name: Create GitHub Release
-          env:
-            GH_TOKEN: ${{ github.token }}
-          run: |
-            gh release create "v1.0.${{ github.run_number }}" \
-              --title "Release v1.0.${{ github.run_number }}" \
-              --notes "Automated release from GitHub Actions" \
-              build/unit-converter.zip
+      - name: Release erstellen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v1.0.${{ github.run_number }}" \
+            --title "Version 1.0.${{ github.run_number }}" \
+            --notes "Release" \
+            build/app.zip
